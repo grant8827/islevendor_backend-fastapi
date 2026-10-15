@@ -6,7 +6,7 @@ from app.routers import facial, ocr, routing
 
 app = FastAPI(
     title="IsleVendor AI Service",
-    description="OCR, facial liveness/match, and route-distance helpers for the IsleVendor platform.",
+    description="Driver KYC document OCR/verification, facial liveness/match, and route-distance helpers for the IsleVendor platform.",
     version="0.1.0",
 )
 
