@@ -24,5 +24,11 @@ class Settings(BaseSettings):
     # non-default Homebrew prefix). Leave unset to use pytesseract's default.
     TESSERACT_CMD: Optional[str] = None
 
+    # A proof of address (utility bill, bank statement) must be issued within
+    # this many days of the application.
+    PROOF_OF_ADDRESS_MAX_AGE_DAYS: int = 90
+    # Fraction of the address's words that must appear on a proof of address.
+    ADDRESS_MATCH_THRESHOLD: float = 0.5
+
 
 settings = Settings()

@@ -6,3 +6,4 @@ pytesseract
 Pillow
 PyMuPDF
 python-dateutil
+opencv-python-headless

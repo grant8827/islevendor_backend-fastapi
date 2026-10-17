@@ -103,3 +103,72 @@ def name_match_score(expected_name: str, extracted_name: str) -> float:
         or any(difflib.SequenceMatcher(None, token, other).ratio() >= 0.8 for other in extracted_tokens)
     )
     return matched / len(expected_tokens)
+
+
+# ── Business and vehicle document details ────────────────────────────────
+# A warehouse's TRN card, COCJ business registration and proof of address,
+# and the licence plate on a driver's vehicle registration/insurance. Same
+# best-effort stance as above: a value that can't be found comes back None
+# and the caller treats it as "a human should look", never as a match.
+
+# Jamaican TRN: 9 digits, printed as 123-456-789, 123 456 789 or 123456789.
+TRN_RE = re.compile(r"(?<!\d)(\d{3})[\s\-]?(\d{3})[\s\-]?(\d{3})(?!\d)")
+
+
+def extract_trns(text: str) -> list[str]:
+    """Every 9-digit TRN-shaped number on the page, digits only."""
+    return ["".join(m.groups()) for m in TRN_RE.finditer(text)]
+
+
+def digits_only(value: str) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def trn_matches(expected_trn: str, text: str) -> Optional[bool]:
+    """True if the expected TRN is printed on the page (allowing one misread
+    digit), False if TRN-shaped numbers were found but none match, None if
+    the page has no TRN-shaped number at all."""
+    expected = digits_only(expected_trn)
+    found = extract_trns(text)
+    if not found:
+        return None
+    return any(sum(a != b for a, b in zip(expected, trn)) <= 1 for trn in found if len(trn) == len(expected))
+
+
+def text_name_score(expected_name: str, text: str) -> float:
+    """Like name_match_score, but against every word on the page — for
+    documents (a COCJ certificate, a utility bill) where the business or
+    account name isn't on one predictable labelled line."""
+    return name_match_score(expected_name, text)
+
+
+def _alnum(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
+
+
+def plate_found(expected_plate: str, text: str) -> Optional[bool]:
+    """Whether the licence plate appears on the page, ignoring spaces and
+    dashes and allowing one misread character. None if the page has no
+    readable text."""
+    plate = _alnum(expected_plate)
+    page = _alnum(text)
+    if not page:
+        return None
+    if not plate:
+        return False
+    if plate in page:
+        return True
+    window = len(plate)
+    return any(
+        difflib.SequenceMatcher(None, plate, page[i : i + window]).ratio() >= 1 - 1.5 / window
+        for i in range(0, max(1, len(page) - window + 1))
+    )
+
+
+def extract_document_date(text: str) -> Optional[date]:
+    """The date a bill or statement was issued: the latest date on the page
+    that isn't in the future (a due date can be later than the bill date,
+    but a proof of address is about when it was issued)."""
+    today = date.today()
+    candidates = [d for m in DATE_RE.finditer(text) if (d := _parse_date(m.group(1))) and d <= today]
+    return max(candidates) if candidates else None

@@ -24,7 +24,7 @@ if settings.TESSERACT_CMD:
 PDF_RASTER_DPI = 300
 
 
-def _load_image(file_bytes: bytes, content_type: str) -> Image.Image:
+def load_image(file_bytes: bytes, content_type: str) -> Image.Image:
     if content_type == "application/pdf":
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         try:
@@ -46,5 +46,5 @@ def extract_text(file_bytes: bytes, content_type: str) -> str:
     image or single-page PDF. May return an empty string — callers must
     handle that rather than assume extraction always finds something.
     """
-    image = _load_image(file_bytes, content_type).convert("L")  # grayscale aids OCR
+    image = load_image(file_bytes, content_type).convert("L")  # grayscale aids OCR
     return pytesseract.image_to_string(image)
