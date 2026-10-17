@@ -10,9 +10,10 @@ delivery on them (a dark doorstep or a blurry phone photo would otherwise
 leave a driver stuck with the package).
 """
 
+import logging
 import re
+from typing import Optional
 
-import cv2
 import numpy as np
 import pytesseract
 
@@ -33,17 +34,42 @@ MIN_ID_WORDS = 2
 # are 3000–4000px wide, which is slow and no more accurate.
 DETECT_WIDTH = 1000
 
-_face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+log = logging.getLogger(__name__)
+
+# Loaded on first use, not at import: if OpenCV can't load on a server, the
+# rest of the service (document OCR) must still start. Face detection then
+# reports None and photos are judged on ID text alone.
+_face_detector = None
+_face_detector_failed = False
 
 
-def _count_faces(gray: np.ndarray) -> int:
+def _detector():
+    global _face_detector, _face_detector_failed
+    if _face_detector is None and not _face_detector_failed:
+        try:
+            import cv2
+
+            _face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        except Exception:  # noqa: BLE001 — any OpenCV failure means "can't look for faces"
+            log.exception("OpenCV face detection unavailable")
+            _face_detector_failed = True
+    return _face_detector
+
+
+def _count_faces(gray: np.ndarray) -> Optional[int]:
+    """Faces found, or None if face detection isn't available."""
+    detector = _detector()
+    if detector is None:
+        return None
+    import cv2
+
     scale = DETECT_WIDTH / gray.shape[1] if gray.shape[1] > DETECT_WIDTH else 1.0
     if scale != 1.0:
         gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     gray = cv2.equalizeHist(gray)
     # minSize keeps tiny false positives (patterns on the box) out; an ID
     # card's portrait held up to the camera is still well above it.
-    faces = _face_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(36, 36))
+    faces = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(36, 36))
     return len(faces)
 
 
@@ -57,13 +83,14 @@ def check_delivery_photo(file_bytes: bytes, content_type: str, proof_type: str) 
     image = load_image(file_bytes, content_type).convert("L")
     faces = _count_faces(np.array(image))
     id_text = _id_text_found(image)
+    face_seen = bool(faces)
 
     if proof_type == "PACKAGE_WITH_RECIPIENT":
-        passed = faces > 0
-        reason = None if passed else "No person could be seen in the photo"
+        passed = face_seen
+        reason = None if passed else ("Face detection isn't available to check the photo" if faces is None else "No person could be seen in the photo")
     else:
         # An ID card shows its wording, or at least the holder's portrait.
-        passed = id_text or faces > 0
+        passed = id_text or face_seen
         reason = None if passed else "No ID card could be made out in the photo"
 
-    return {"status": "passed" if passed else "flagged", "faces_found": faces, "id_text_found": id_text, "reason": reason}
+    return {"status": "passed" if passed else "flagged", "faces_found": faces or 0, "id_text_found": id_text, "reason": reason}
